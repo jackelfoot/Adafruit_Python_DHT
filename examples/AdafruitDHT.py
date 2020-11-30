@@ -1,17 +1,15 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 # Copyright (c) 2014 Adafruit Industries
 # Author: Tony DiCola
-
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-
+# test
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -19,9 +17,40 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-import sys
 
+import sys
+import socket
+import threading
+import RPi.GPIO as GPIO
+import http.client as http
+import urllib
+import json
+import time
 import Adafruit_DHT
+
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(24, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+deviceId = 'DOlrJYNE'
+deviceKey = 'CgpaBSluDX2S4rHn' 
+
+def post_to_mcs(payload): 
+	headers = {"Content-type": "application/json", "deviceKey": deviceKey} 
+	not_connected = 1 
+	while (not_connected):
+		try:
+			conn = http.HTTPConnection("api.mediatek.com:80")
+			conn.connect() 
+			not_connected = 0 
+		except (http.HTTPException, socket.error) as ex: 
+			print ("Error: %s" % ex)
+			time.sleep(10)
+			 # sleep 10 seconds 
+	conn.request("POST", "/mcs/v2/devices/" + deviceId + "/datapoints", json.dumps(payload), headers) 
+	response = conn.getresponse() 
+	print( response.status, response.reason, json.dumps(payload), time.strftime("%c")) 
+	data = response.read() 
+	conn.close() 
+ 
 
 
 # Parse command line parameters.
@@ -38,7 +67,7 @@ else:
 
 # Try to grab a sensor reading.  Use the read_retry method which will retry up
 # to 15 times to get a sensor reading (waiting 2 seconds between each retry).
-h0, t0 = Adafruit_DHT.read_retry(sensor, pin)
+humidity, temperature = Adafruit_DHT.read_retry(sensor, pin)
 
 # Un-comment the line below to convert the temperature to Fahrenheit.
 # temperature = temperature * 9/5.0 + 32
@@ -47,10 +76,23 @@ h0, t0 = Adafruit_DHT.read_retry(sensor, pin)
 # the results will be null (because Linux can't
 # guarantee the timing of calls to read the sensor).
 # If this happens try again!
-while true:
-	h0, t0 = Adafruit_DHT.read_retry(sensor, pin)
-		if h0 is not None and t0 is not None:
-			print('Temp={0:0.1f}*  Humidity={1:0.1f}%'.format(t0, h0))
+if humidity is not None and temperature is not None:
+    print('Temp={0:0.1f}*  Humidity={1:0.1f}%'.format(temperature, humidity))
+else:
+    print('Failed to get reading. Try again!')
+    sys.exit(1)
+while(1):
+	h0,t0 = Adafruit_DHT.read_retry(sensor,pin)
+	SwitchStatus = GPIO.input(24)
+	if h0 is not None and t0 is not None:
+		print('Temp={0:0.1f}* Humidity={1:0.1f}%'.format(t0,h0))
+		payload = {"datapoints":[{"dataChnId":"Humidity","values":{"value":h0}},{"dataChnId":"Temperature","values":{"value":t0}},{"dataChnId":"SwitchStatus","values":{"value":SwitchStatus}}]} 
+		post_to_mcs(payload)
+		time.sleep(10)
+		if( SwitchStatus == 0):
+			print('Button pressed')
 		else:
-			print('Failed to get reading. Try again!')
-			sys.exit(1)
+			print('Button released')
+	else:
+		print('Failed to get reading. Try again!')
+		sys.exit(1)
